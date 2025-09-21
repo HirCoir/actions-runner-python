@@ -142,6 +142,10 @@ if [ -z "$RUNNER_NAME" ]; then
     RUNNER_NAME=$(hostname)
 fi
 
+# Remove existing runner if it exists
+echo "Removing any existing runner registration..."
+./config.sh remove --token "$GITHUB_TOKEN" || true
+
 # Configure runner
 echo "Configuring GitHub Actions Runner..."
 ./config.sh \
