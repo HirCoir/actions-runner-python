@@ -122,7 +122,7 @@ WORKDIR /home/runner
 RUN sudo ./bin/installdependencies.sh
 
 # Copy and setup entrypoint script
-COPY entrypoint.sh /home/runner/entrypoint.sh
+COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
 RUN chmod +x /home/runner/entrypoint.sh
 
 # Expose working directory as volume
