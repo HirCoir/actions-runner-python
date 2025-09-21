@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  github-runner:
+    build: .
+    container_name: github-actions-runner-python
+    environment:
+      # Required: GitHub repository or organization URL
+      - GITHUB_URL=${GITHUB_URL}
+      # Required: GitHub runner token (get from repo settings)
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      # Optional: Custom runner name (defaults to container hostname)
+      - RUNNER_NAME=${RUNNER_NAME:-python-runner}
+      # Optional: Runner labels (comma-separated)
+      - RUNNER_LABELS=${RUNNER_LABELS:-self-hosted,python,docker}
+      # Optional: Runner group
+      - RUNNER_GROUP=${RUNNER_GROUP:-default}
+      # Optional: Work directory
+      - RUNNER_WORK_DIR=${RUNNER_WORK_DIR:-_work}
+    volumes:
+      # Persist runner work directory
+      - runner_work:/home/runner/_work
+      # Mount Docker socket for Docker-in-Docker
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Optional: Mount local code directory
+      - .:/workspace
+    restart: unless-stopped
+    # Privileged mode for Docker-in-Docker (optional, remove if not needed)
+    privileged: true
+
+volumes:
+  runner_work:
