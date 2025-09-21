@@ -70,12 +70,22 @@ RUN apt-get update && apt-get install -y \
     python3-dev \
     python3-setuptools \
     python3-wheel \
-    # Build tools
+    # Build tools and dependencies for Python packages
     build-essential \
     gcc \
     g++ \
     make \
     cmake \
+    pkg-config \
+    # Dependencies for numpy, pandas, matplotlib
+    libopenblas-dev \
+    liblapack-dev \
+    gfortran \
+    libfreetype6-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libffi-dev \
+    libssl-dev \
     # Additional useful tools
     vim \
     nano \
@@ -94,26 +104,38 @@ RUN apt-get update && apt-get install -y \
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
 # Upgrade pip and install common Python packages
-RUN python3 -m pip install --upgrade pip setuptools wheel && \
-    python3 -m pip install \
-    # Common development packages
+RUN python3 -m pip install --upgrade pip setuptools wheel
+
+# Install packages in stages to better handle build issues
+RUN python3 -m pip install --no-cache-dir \
+    # Basic packages first
     requests \
+    pyyaml \
+    python-dotenv \
+    click
+
+RUN python3 -m pip install --no-cache-dir \
+    # Development tools
     pytest \
     black \
     flake8 \
     mypy \
-    pylint \
-    # Data science packages
-    numpy \
-    pandas \
-    matplotlib \
+    pylint
+
+RUN python3 -m pip install --no-cache-dir \
     # Web frameworks
     flask \
-    fastapi \
-    # Other useful packages
-    pyyaml \
-    python-dotenv \
-    click
+    fastapi
+
+# Install data science packages separately (they need more build dependencies)
+RUN python3 -m pip install --no-cache-dir \
+    numpy
+
+RUN python3 -m pip install --no-cache-dir \
+    pandas
+
+RUN python3 -m pip install --no-cache-dir \
+    matplotlib
 
 # Create runner user
 RUN useradd -m -s /bin/bash runner && \
