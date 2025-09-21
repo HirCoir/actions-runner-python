@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for GitHub Actions Self-Hosted Runner with Python
 # Stage 1: Download and prepare runner
-FROM ubuntu:22.04 as runner-base
+FROM ubuntu:22.04 AS runner-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -42,7 +42,6 @@ ENV PYTHONDONTWRITEBYTECODE=1
 
 # GitHub Actions Runner configuration environment variables
 ENV GITHUB_URL=""
-ENV GITHUB_TOKEN=""
 ENV RUNNER_NAME=""
 ENV RUNNER_LABELS=""
 ENV RUNNER_GROUP=""
@@ -103,39 +102,8 @@ RUN apt-get update && apt-get install -y \
 # Create symbolic link for python command
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# Upgrade pip and install common Python packages
+# Upgrade pip only - packages will be installed in workflows as needed
 RUN python3 -m pip install --upgrade pip setuptools wheel
-
-# Install packages in stages to better handle build issues
-RUN python3 -m pip install --no-cache-dir \
-    # Basic packages first
-    requests \
-    pyyaml \
-    python-dotenv \
-    click
-
-RUN python3 -m pip install --no-cache-dir \
-    # Development tools
-    pytest \
-    black \
-    flake8 \
-    mypy \
-    pylint
-
-RUN python3 -m pip install --no-cache-dir \
-    # Web frameworks
-    flask \
-    fastapi
-
-# Install data science packages separately (they need more build dependencies)
-RUN python3 -m pip install --no-cache-dir \
-    numpy
-
-RUN python3 -m pip install --no-cache-dir \
-    pandas
-
-RUN python3 -m pip install --no-cache-dir \
-    matplotlib
 
 # Create runner user
 RUN useradd -m -s /bin/bash runner && \
