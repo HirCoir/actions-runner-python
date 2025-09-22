@@ -1,4 +1,4 @@
-# Dockerfile para compilación cruzada de C/C++ para Windows desde Linux (vFinal-2)
+# Dockerfile para compilación cruzada de C/C++ para Windows desde Linux (vFinal-3)
 # Utiliza Clang/LLVM, CMake, Ninja, xwin para el SDK de Windows, y Wine para pruebas.
 
 FROM debian:bullseye-slim
@@ -53,10 +53,15 @@ cat > /opt/toolchain/windows-clang.cmake << 'EOF'
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 
-# LA SOLUCIÓN: Cambia el tipo de compilación de prueba para evitar el enlazado.
-# CMake intentará crear una librería estática en lugar de un ejecutable para su
-# prueba inicial, lo que evita el error de "msvcrtd.lib not found".
+# SOLUCIÓN 1: Evitar el error de "msvcrtd.lib" durante la prueba del compilador.
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
+
+# SOLUCIÓN 2: Especificar explícitamente el estándar de C++.
+# Esto soluciona el error de "target_compile_features no known features".
+# Asumimos C++17, que es lo más común. Cambia a 14 o 20 si es necesario.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 set(CMAKE_C_COMPILER clang-cl)
 set(CMAKE_CXX_COMPILER clang-cl)
