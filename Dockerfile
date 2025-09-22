@@ -4,7 +4,7 @@ FROM --platform=$TARGETPLATFORM ubuntu:22.04 AS runner-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
-ENV RUNNER_VERSION=2.328.0
+ENV RUNNER_VERSION=2.327.1
 
 # Use build arguments for platform detection
 ARG TARGETPLATFORM
