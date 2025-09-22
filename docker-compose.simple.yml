@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  windows-compiler:
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
+    container_name: windows-compiler
+    volumes:
+      - .:/workspace
+      - windows-build-cache:/root/.cache
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null
+
+volumes:
+  windows-build-cache:
