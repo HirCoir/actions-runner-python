@@ -40,9 +40,7 @@ RUN set -eux; \
 
 # 3. Instalar xwin para obtener el SDK y CRT de Windows
 RUN set -eux; \
-    # CORRECCIÓN: Se actualizó la versión de xwin a 0.6.7
     xwin_version="0.6.7"; \
-    # CORRECCIÓN: Se ajustó el formato de la URL para que coincida con las nuevas releases
     curl -fL "https://github.com/Jake-Shadle/xwin/releases/download/${xwin_version}/xwin-${xwin_version}-x86_64-unknown-linux-musl.tar.gz" \
     | tar -xz -C /usr/local/bin --strip-components=1; \
     xwin --accept-license splat --output /xwin
@@ -95,11 +93,12 @@ RUN chmod +x /opt/scripts/build-project.sh
 
 # 7. Limpieza final para reducir el tamaño de la imagen
 RUN set -eux; \
-    apt-get purge -y --auto-remove curl gpg ca-certificates tar; \
+    # CORRECCIÓN: Se eliminó el comando `apt-get purge` que estaba rompiendo la imagen.
+    # Solo limpiamos los cachés, que es seguro.
     rm -rf /var/lib/apt/lists/*; \
     rm /usr/local/bin/xwin; \
     rm -rf /root/.xwin-cache
 
 # Directorio de trabajo por defecto
 WORKDIR /workspace
-CMD ["bash"]
+CMD ["tail", "-f", "/dev/null"]
