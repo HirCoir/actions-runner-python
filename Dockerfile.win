@@ -1,10 +1,10 @@
 
 # Dockerfile for Windows Cross-Compilation using MSYS2
-FROM ghcr.io/msys2/msys2-docker-experimental
+FROM ghcr.io/msys2/msys2:latest
 
-# Install base packages and development tools
-RUN pacman -Syu --noconfirm && \
-    pacman -S --noconfirm --needed \
+# Install base packages and development tools using msys2 command
+RUN msys2 -c 'pacman -Syu --noconfirm' && \
+    msys2 -c 'pacman -S --noconfirm --needed \
     git \
     base-devel \
     mingw-w64-x86_64-toolchain \
@@ -16,8 +16,8 @@ RUN pacman -Syu --noconfirm && \
     vim \
     nano \
     wget \
-    curl \
-    && pacman -Scc --noconfirm
+    curl' && \
+    msys2 -c 'pacman -Scc --noconfirm'
 
 # Set Windows compilation environment variables for MSYS2
 ENV MSYSTEM=MINGW64
