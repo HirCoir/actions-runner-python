@@ -1,16 +1,18 @@
 #!/bin/bash
 set -e
 
-# Cleanup function to remove runner on exit
+# Cleanup function for graceful shutdown
 cleanup() {
-    echo "Cleaning up runner registration..."
+    echo "Shutting down runner gracefully..."
     if [ -f ".runner" ]; then
+        echo "Removing runner registration..."
         ./config.sh remove --token "$GITHUB_TOKEN" || true
     fi
+    exit 0
 }
 
-# Set trap to cleanup on exit
-trap cleanup EXIT SIGTERM SIGINT
+# Set up signal handlers for graceful shutdown
+trap cleanup SIGTERM SIGINT SIGQUIT
 
 # Check required environment variables
 if [ -z "$GITHUB_URL" ]; then
@@ -23,28 +25,22 @@ if [ -z "$GITHUB_TOKEN" ]; then
     exit 1
 fi
 
-# Generate unique runner name if not provided
+# Set default runner name if not provided
 if [ -z "$RUNNER_NAME" ]; then
-    RUNNER_NAME="$(hostname)-$(date +%s)-$$"
+    RUNNER_NAME=$(hostname)
 fi
 
-# Remove any existing runner configuration files
-echo "Cleaning up any existing runner configuration..."
-rm -f .runner .credentials .credentials_rsaparams
+# Force cleanup any existing sessions first
+echo "Cleaning up any existing runner sessions..."
+./config.sh remove --token "$GITHUB_TOKEN" || true
 
-# Remove existing runner if it exists (try multiple times)
-echo "Removing any existing runner registration..."
-for i in {1..3}; do
-    ./config.sh remove --token "$GITHUB_TOKEN" && break || {
-        echo "Attempt $i failed, retrying in 5 seconds..."
-        sleep 5
-    }
-done || true
-
-# Wait a moment for GitHub to process the removal
+# Wait a moment to ensure session cleanup
 sleep 2
 
-# Configure runner
+# Remove any leftover credential files
+rm -f .credentials .credentials_rsaparams .runner || true
+
+# Configure runner with ephemeral flag to prevent session conflicts
 echo "Configuring GitHub Actions Runner..."
 ./config.sh \
     --url "$GITHUB_URL" \
@@ -54,7 +50,8 @@ echo "Configuring GitHub Actions Runner..."
     --labels "$RUNNER_LABELS" \
     --runnergroup "$RUNNER_GROUP" \
     --unattended \
-    --replace
+    --replace \
+    --ephemeral
 
 # Start runner
 echo "Starting GitHub Actions Runner..."
