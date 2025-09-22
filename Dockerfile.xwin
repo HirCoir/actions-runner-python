@@ -7,16 +7,13 @@ ENV KEYRINGS=/usr/share/keyrings
 # 1. Instalar prerrequisitos y configurar repositorios para Clang y Wine
 RUN set -eux; \
     apt-get update; \
-    # Instalar utilidades necesarias para la configuración
     apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
         gpg \
         tar; \
-    # Añadir repositorio de LLVM/Clang
     curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o $KEYRINGS/llvm.gpg; \
     echo "deb [signed-by=$KEYRINGS/llvm.gpg] http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-15 main" > /etc/apt/sources.list.d/llvm.list; \
-    # Añadir repositorio de Wine y habilitar i386 (requerido por Wine)
     dpkg --add-architecture i386; \
     curl -fsSL https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor -o $KEYRINGS/winehq.gpg; \
     echo "deb [signed-by=$KEYRINGS/winehq.gpg] https://dl.winehq.org/wine-builds/debian/ bullseye main" > /etc/apt/sources.list.d/winehq.list; \
@@ -25,18 +22,14 @@ RUN set -eux; \
 # 2. Instalar las herramientas de compilación y Wine
 RUN set -eux; \
     apt-get install -y --no-install-recommends \
-        # Toolchain de LLVM/Clang
         clang-15 \
         llvm-15 \
         lld-15 \
-        # Wine para ejecutar/probar los ejecutables de Windows
         winehq-staging \
-        # Herramientas de construcción
         cmake \
         make \
         git \
         pkg-config; \
-    # Crear enlaces simbólicos para las herramientas
     ln -s clang-15 /usr/bin/clang; \
     ln -s clang++-15 /usr/bin/clang++; \
     ln -s lld-15 /usr/bin/ld.lld; \
@@ -47,11 +40,11 @@ RUN set -eux; \
 
 # 3. Instalar xwin para obtener el SDK y CRT de Windows
 RUN set -eux; \
-    xwin_version="0.5.0"; \
-    # Descargar el binario precompilado de xwin (curl y tar ya están instalados)
-    curl -fL "https://github.com/Jake-Shadle/xwin/releases/download/v${xwin_version}/xwin-v${xwin_version}-x86_64-unknown-linux-musl.tar.gz" \
+    # CORRECCIÓN: Se actualizó la versión de xwin a 0.6.7
+    xwin_version="0.6.7"; \
+    # CORRECCIÓN: Se ajustó el formato de la URL para que coincida con las nuevas releases
+    curl -fL "https://github.com/Jake-Shadle/xwin/releases/download/${xwin_version}/xwin-${xwin_version}-x86_64-unknown-linux-musl.tar.gz" \
     | tar -xz -C /usr/local/bin --strip-components=1; \
-    # Descargar y extraer los archivos del SDK y CRT de Windows a /xwin
     xwin --accept-license splat --output /xwin
 
 # 4. Crear el archivo de toolchain de CMake para la compilación cruzada
@@ -102,9 +95,7 @@ RUN chmod +x /opt/scripts/build-project.sh
 
 # 7. Limpieza final para reducir el tamaño de la imagen
 RUN set -eux; \
-    # Eliminar utilidades que ya no son necesarias
     apt-get purge -y --auto-remove curl gpg ca-certificates tar; \
-    # Eliminar archivos de caché de apt y de xwin
     rm -rf /var/lib/apt/lists/*; \
     rm /usr/local/bin/xwin; \
     rm -rf /root/.xwin-cache
