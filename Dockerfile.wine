@@ -1,0 +1,59 @@
+# Enhanced WINE-based Windows compilation
+FROM ubuntu:22.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+ENV WINEARCH=win64
+ENV WINEPREFIX=/root/.wine
+
+# Install WINE and Windows compilation tools
+RUN apt-get update && apt-get install -y \
+    # WINE
+    wine64 \
+    winetricks \
+    # MinGW toolchain
+    mingw-w64 \
+    mingw-w64-tools \
+    gcc-mingw-w64-x86-64 \
+    g++-mingw-w64-x86-64 \
+    # Build tools
+    cmake \
+    make \
+    git \
+    wget \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Initialize WINE
+RUN wine64 --version && \
+    wineboot --init && \
+    winetricks -q vcrun2019 && \
+    echo "WINE initialized"
+
+# Set cross-compilation environment
+ENV CC=x86_64-w64-mingw32-gcc
+ENV CXX=x86_64-w64-mingw32-g++
+
+# Create enhanced toolchain file
+RUN mkdir -p /opt/toolchain && \
+cat > /opt/toolchain/wine-mingw.cmake << 'EOF'
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR x86_64)
+
+set(CMAKE_C_COMPILER x86_64-w64-mingw32-gcc)
+set(CMAKE_CXX_COMPILER x86_64-w64-mingw32-g++)
+set(CMAKE_RC_COMPILER x86_64-w64-mingw32-windres)
+
+set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32)
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+# Use WINE for running Windows executables during build
+set(CMAKE_CROSSCOMPILING_EMULATOR wine64)
+
+set(CMAKE_C_FLAGS "-static-libgcc")
+set(CMAKE_CXX_FLAGS "-static-libgcc -static-libstdc++")
+EOF
+
+WORKDIR /workspace
+CMD ["bash"]

@@ -1,0 +1,159 @@
+# Windows cross-compilation using xwin and clang-cl
+FROM rust:1.75-slim-bullseye
+
+ENV KEYRINGS /usr/local/share/keyrings
+
+# Install prerequisites and LLVM/Clang toolchain
+RUN set -eux; \
+    mkdir -p $KEYRINGS; \
+    apt-get update && apt-get install -y gpg curl; \
+    # Add LLVM repository
+    curl --fail https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor > $KEYRINGS/llvm.gpg; \
+    echo "deb [signed-by=$KEYRINGS/llvm.gpg] http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-15 main" > /etc/apt/sources.list.d/llvm.list; \
+    # Add Wine repository for testing
+    curl --fail https://dl.winehq.org/wine-builds/winehq.key | gpg --dearmor > $KEYRINGS/winehq.gpg; \
+    echo "deb [signed-by=$KEYRINGS/winehq.gpg] https://dl.winehq.org/wine-builds/debian/ bullseye main" > /etc/apt/sources.list.d/winehq.list;
+
+# Install toolchain components
+RUN set -eux; \
+    dpkg --add-architecture i386; \
+    apt-get update && apt-get install --no-install-recommends -y \
+        # LLVM/Clang toolchain
+        clang-15 \
+        llvm-15 \
+        lld-15 \
+        # Wine for testing Windows executables
+        winehq-staging \
+        # Build tools
+        cmake \
+        make \
+        git \
+        pkg-config \
+        # Archive tools
+        tar \
+        unzip \
+        # Additional libraries that might be needed
+        libc6-dev \
+        && \
+    # Create symlinks for easier access
+    ln -s clang-15 /usr/bin/clang && \
+    ln -s clang /usr/bin/clang++ && \
+    ln -s lld-15 /usr/bin/ld.lld && \
+    # Create MSVC-compatible tool symlinks
+    ln -s clang-15 /usr/bin/clang-cl && \
+    ln -s llvm-ar-15 /usr/bin/llvm-lib && \
+    ln -s lld-link-15 /usr/bin/lld-link && \
+    # Verify installations
+    clang++ -v && \
+    ld.lld -v && \
+    llvm-lib -v && \
+    clang-cl -v && \
+    lld-link --version && \
+    # Use clang for host compilation
+    update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100 && \
+    update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 100 && \
+    # Cleanup
+    apt-get remove -y --auto-remove && \
+    rm -rf /var/lib/apt/lists/*;
+
+# Add Windows target for Rust
+RUN rustup target add x86_64-pc-windows-msvc
+
+# Install xwin and setup Windows SDK/CRT
+RUN set -eux; \
+    xwin_version="0.5.0"; \
+    # Install xwin via cargo
+    cargo install xwin --version $xwin_version; \
+    # Download and setup Windows SDK and CRT
+    xwin --accept-license 1 splat --output /xwin; \
+    # Cleanup
+    rm -rf ~/.cargo/registry /root/.xwin-cache;
+
+# Setup cross-compilation environment variables
+ENV CC_x86_64_pc_windows_msvc="clang-cl" \
+    CXX_x86_64_pc_windows_msvc="clang-cl" \
+    AR_x86_64_pc_windows_msvc="llvm-lib" \
+    # Wine configuration
+    WINEDEBUG="-all" \
+    CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUNNER="wine" \
+    # Clang-cl flags for MSVC compatibility
+    CL_FLAGS="-Wno-unused-command-line-argument -fuse-ld=lld-link /imsvc/xwin/crt/include /imsvc/xwin/sdk/include/ucrt /imsvc/xwin/sdk/include/um /imsvc/xwin/sdk/include/shared" \
+    # Linker configuration
+    CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER="lld-link" \
+    RUSTFLAGS="-Lnative=/xwin/crt/lib/x86_64 -Lnative=/xwin/sdk/lib/um/x86_64 -Lnative=/xwin/sdk/lib/ucrt/x86_64"
+
+# Apply CL_FLAGS to C/C++ compilation
+ENV CFLAGS_x86_64_pc_windows_msvc="$CL_FLAGS" \
+    CXXFLAGS_x86_64_pc_windows_msvc="$CL_FLAGS"
+
+# Create CMake toolchain file for cross-compilation
+RUN mkdir -p /opt/toolchain && \
+cat > /opt/toolchain/windows-clang.cmake << 'EOF'
+set(CMAKE_SYSTEM_NAME Windows)
+set(CMAKE_SYSTEM_PROCESSOR x86_64)
+
+# Use clang-cl for MSVC compatibility
+set(CMAKE_C_COMPILER clang-cl)
+set(CMAKE_CXX_COMPILER clang-cl)
+set(CMAKE_RC_COMPILER llvm-rc)
+
+# Use lld-link for linking
+set(CMAKE_LINKER lld-link)
+
+# Set search paths
+set(CMAKE_FIND_ROOT_PATH /xwin)
+set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
+set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
+set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
+
+# Include directories
+set(CMAKE_C_FLAGS_INIT "/imsvc/xwin/crt/include /imsvc/xwin/sdk/include/ucrt /imsvc/xwin/sdk/include/um /imsvc/xwin/sdk/include/shared")
+set(CMAKE_CXX_FLAGS_INIT "/imsvc/xwin/crt/include /imsvc/xwin/sdk/include/ucrt /imsvc/xwin/sdk/include/um /imsvc/xwin/sdk/include/shared")
+
+# Library directories
+set(CMAKE_EXE_LINKER_FLAGS_INIT "/LIBPATH:/xwin/crt/lib/x86_64 /LIBPATH:/xwin/sdk/lib/um/x86_64 /LIBPATH:/xwin/sdk/lib/ucrt/x86_64")
+set(CMAKE_SHARED_LINKER_FLAGS_INIT "/LIBPATH:/xwin/crt/lib/x86_64 /LIBPATH:/xwin/sdk/lib/um/x86_64 /LIBPATH:/xwin/sdk/lib/ucrt/x86_64")
+
+# Use Wine for running Windows executables during build
+set(CMAKE_CROSSCOMPILING_EMULATOR wine)
+EOF
+
+# Initialize Wine
+RUN wine wineboot --init
+
+# Create build script
+RUN cat > /opt/scripts/build-windows-xwin.sh << 'EOF'
+#!/bin/bash
+set -e
+
+PROJECT_DIR="${1:-.}"
+BUILD_TYPE="${2:-Release}"
+
+echo "Building with xwin + clang-cl..."
+echo "Project: $PROJECT_DIR"
+echo "Build Type: $BUILD_TYPE"
+
+cd "$PROJECT_DIR"
+
+# Clean build
+rm -rf build-windows
+mkdir build-windows
+cd build-windows
+
+# Configure with xwin toolchain
+cmake .. \
+    -DCMAKE_TOOLCHAIN_FILE=/opt/toolchain/windows-clang.cmake \
+    -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+    -DCMAKE_INSTALL_PREFIX=_install
+
+# Build
+make -j$(nproc)
+
+echo "Build completed!"
+find . -name "*.exe" -type f -exec ls -lh {} \;
+EOF
+
+RUN chmod +x /opt/scripts/build-windows-xwin.sh
+
+WORKDIR /workspace
+CMD ["bash"]

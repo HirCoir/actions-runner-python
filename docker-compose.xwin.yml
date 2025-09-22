@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  windows-xwin-compiler:
+    build:
+      context: .
+      dockerfile: Dockerfile.xwin
+    container_name: windows-xwin-compiler
+    volumes:
+      - .:/workspace
+      - xwin-build-cache:/root/.cache
+      - xwin-cargo-cache:/usr/local/cargo/registry
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: tail -f /dev/null
+
+volumes:
+  xwin-build-cache:
+  xwin-cargo-cache:
