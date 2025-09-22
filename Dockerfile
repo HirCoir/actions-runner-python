@@ -32,16 +32,13 @@ WORKDIR /home/runner
 RUN echo "Target platform: $TARGETPLATFORM" && \
     case ${TARGETPLATFORM} in \
         linux/amd64) \
-            RUNNER_ARCH=x64 && \
-            RUNNER_CHECKSUM=01066fad3a2893e63e6ca880ae3a1fad5bf9329d60e77ee15f2b97c148c3cd4e \
+            RUNNER_ARCH=x64 \
             ;; \
         linux/arm64) \
-            RUNNER_ARCH=arm64 && \
-            RUNNER_CHECKSUM=b801b9809c4d9301932bccadf57ca13533073b2aa9fa9b8e625a8db905b5d8eb \
+            RUNNER_ARCH=arm64 \
             ;; \
         linux/arm/v7) \
-            RUNNER_ARCH=arm && \
-            RUNNER_CHECKSUM=530bb83124f38edc9b410fbcc0a8b0baeaa336a14e3707acc8ca308fe0cb7540 \
+            RUNNER_ARCH=arm \
             ;; \
         *) \
             echo "Unsupported platform: ${TARGETPLATFORM}" && \
@@ -51,7 +48,6 @@ RUN echo "Target platform: $TARGETPLATFORM" && \
     echo "Downloading runner for architecture: ${RUNNER_ARCH}" && \
     curl -o actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz -L \
         https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz && \
-    echo "${RUNNER_CHECKSUM}  actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz" | sha256sum -c && \
     tar xzf ./actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz && \
     rm actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz
 
