@@ -144,8 +144,6 @@ COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 USER runner
 WORKDIR /home/runner
 
-# Install runner dependencies
-RUN sudo ./bin/installdependencies.sh
 
 # Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
