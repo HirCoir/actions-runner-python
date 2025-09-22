@@ -1,6 +1,5 @@
 # Dockerfile para compilación cruzada de C/C++ para Windows desde Linux
 # Utiliza Clang/LLVM, CMake, xwin para el SDK de Windows, y Wine para pruebas.
-# Rust ha sido completamente eliminado.
 FROM debian:bullseye-slim
 
 ENV KEYRINGS=/usr/share/keyrings
@@ -8,10 +7,12 @@ ENV KEYRINGS=/usr/share/keyrings
 # 1. Instalar prerrequisitos y configurar repositorios para Clang y Wine
 RUN set -eux; \
     apt-get update; \
+    # Instalar utilidades necesarias para la configuración
     apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
-        gpg; \
+        gpg \
+        tar; \
     # Añadir repositorio de LLVM/Clang
     curl -fsSL https://apt.llvm.org/llvm-snapshot.gpg.key | gpg --dearmor -o $KEYRINGS/llvm.gpg; \
     echo "deb [signed-by=$KEYRINGS/llvm.gpg] http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-15 main" > /etc/apt/sources.list.d/llvm.list; \
@@ -39,60 +40,39 @@ RUN set -eux; \
     ln -s clang-15 /usr/bin/clang; \
     ln -s clang++-15 /usr/bin/clang++; \
     ln -s lld-15 /usr/bin/ld.lld; \
-    # Crear enlaces simbólicos compatibles con MSVC para Clang
     ln -s clang-15 /usr/bin/clang-cl; \
     ln -s llvm-ar-15 /usr/bin/llvm-lib; \
     ln -s lld-link-15 /usr/bin/lld-link; \
-    ln -s llvm-rc-15 /usr/bin/llvm-rc; \
-    # Limpieza para reducir el tamaño de la imagen
-    apt-get purge -y curl gpg ca-certificates; \
-    apt-get autoremove -y; \
-    rm -rf /var/lib/apt/lists/*
+    ln -s llvm-rc-15 /usr/bin/llvm-rc
 
 # 3. Instalar xwin para obtener el SDK y CRT de Windows
 RUN set -eux; \
     xwin_version="0.5.0"; \
-    # Descargar el binario precompilado de xwin
+    # Descargar el binario precompilado de xwin (curl y tar ya están instalados)
     curl -fL "https://github.com/Jake-Shadle/xwin/releases/download/v${xwin_version}/xwin-v${xwin_version}-x86_64-unknown-linux-musl.tar.gz" \
     | tar -xz -C /usr/local/bin --strip-components=1; \
     # Descargar y extraer los archivos del SDK y CRT de Windows a /xwin
-    xwin --accept-license splat --output /xwin; \
-    # Limpieza
-    rm /usr/local/bin/xwin; \
-    rm -rf /root/.xwin-cache
+    xwin --accept-license splat --output /xwin
 
 # 4. Crear el archivo de toolchain de CMake para la compilación cruzada
 RUN mkdir -p /opt/toolchain && \
 cat > /opt/toolchain/windows-clang.cmake << 'EOF'
-# Archivo de toolchain para compilar para Windows x64 con Clang
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
-
-# Especificar los compiladores
 set(CMAKE_C_COMPILER clang-cl)
 set(CMAKE_CXX_COMPILER clang-cl)
 set(CMAKE_RC_COMPILER llvm-rc)
-
-# Especificar el enlazador
 set(CMAKE_LINKER lld-link)
-
-# Establecer la ruta raíz para buscar librerías y cabeceras del SDK de Windows
 set(CMAKE_FIND_ROOT_PATH /xwin)
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-
-# Flags del compilador para incluir las cabeceras del SDK
 set(FLAGS "/imsvc/xwin/crt/include /imsvc/xwin/sdk/include/ucrt /imsvc/xwin/sdk/include/um /imsvc/xwin/sdk/include/shared")
 set(CMAKE_C_FLAGS_INIT "${FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${FLAGS}")
-
-# Flags del enlazador para incluir las librerías del SDK
 set(LINKER_FLAGS "/LIBPATH:/xwin/crt/lib/x86_64 /LIBPATH:/xwin/sdk/lib/um/x86_64 /LIBPATH:/xwin/sdk/lib/ucrt/x86_64")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "${LINKER_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "${LINKER_FLAGS}")
-
-# Emulador para ejecutar pruebas (ctest) a través de Wine
 set(CMAKE_CROSSCOMPILING_EMULATOR "wine")
 EOF
 
@@ -105,28 +85,29 @@ RUN mkdir -p /opt/scripts && \
 cat > /opt/scripts/build-project.sh << 'EOF'
 #!/bin/bash
 set -e
-
 PROJECT_DIR="${1:-.}"
 BUILD_TYPE="${2:-Release}"
-
 echo ">>> Configurando el proyecto CMake en $PROJECT_DIR"
 echo ">>> Tipo de Build: $BUILD_TYPE"
-
-# Configurar con el toolchain de compilación cruzada
 cmake -S "$PROJECT_DIR" -B build-windows \
     -DCMAKE_TOOLCHAIN_FILE=/opt/toolchain/windows-clang.cmake \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
-
 echo ">>> Compilando el proyecto..."
-
-# Compilar
 cmake --build build-windows --config "$BUILD_TYPE" -- -j$(nproc)
-
 echo ">>> ¡Compilación completada!"
 echo ">>> Ejecutables encontrados:"
 find build-windows -name "*.exe" -type f -exec ls -lh {} \;
 EOF
 RUN chmod +x /opt/scripts/build-project.sh
+
+# 7. Limpieza final para reducir el tamaño de la imagen
+RUN set -eux; \
+    # Eliminar utilidades que ya no son necesarias
+    apt-get purge -y --auto-remove curl gpg ca-certificates tar; \
+    # Eliminar archivos de caché de apt y de xwin
+    rm -rf /var/lib/apt/lists/*; \
+    rm /usr/local/bin/xwin; \
+    rm -rf /root/.xwin-cache
 
 # Directorio de trabajo por defecto
 WORKDIR /workspace
