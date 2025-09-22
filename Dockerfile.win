@@ -1,115 +1,56 @@
 
-# Dockerfile for Windows Cross-Compilation Tools
-FROM ubuntu:22.04
+# Dockerfile for Windows Cross-Compilation using MSYS2
+FROM ghcr.io/msys2/msys2-docker-experimental
 
-# Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive
-
-# Install Windows cross-compilation tools
-RUN apt-get update && apt-get install -y \
-    # Build tools
-    build-essential \
-    gcc \
-    g++ \
-    make \
-    cmake \
-    pkg-config \
+# Install base packages and development tools
+RUN pacman -Syu --noconfirm && \
+    pacman -S --noconfirm --needed \
     git \
-    wget \
-    curl \
-    # Windows cross-compilation toolchain
-    mingw-w64 \
-    mingw-w64-tools \
-    mingw-w64-common \
-    gcc-mingw-w64-x86-64 \
-    g++-mingw-w64-x86-64 \
-    # Wine for testing Windows executables (optional)
-    wine \
-    wine64 \
-    # Additional cross-compilation libraries
-    libz-mingw-w64-dev \
-    # Basic tools
+    base-devel \
+    mingw-w64-x86_64-toolchain \
+    mingw-w64-x86_64-cmake \
+    mingw-w64-x86_64-ninja \
+    mingw-w64-x86_64-pkg-config \
+    mingw-w64-x86_64-gcc \
+    mingw-w64-x86_64-gdb \
     vim \
     nano \
-    && rm -rf /var/lib/apt/lists/*
+    wget \
+    curl \
+    && pacman -Scc --noconfirm
 
-# Set Windows cross-compilation environment variables
-ENV CC=x86_64-w64-mingw32-gcc
-ENV CXX=x86_64-w64-mingw32-g++
-ENV AR=x86_64-w64-mingw32-ar
-ENV STRIP=x86_64-w64-mingw32-strip
-ENV RANLIB=x86_64-w64-mingw32-ranlib
-ENV PKG_CONFIG_PATH=/usr/x86_64-w64-mingw32/lib/pkgconfig
-ENV CROSS_TRIPLE=x86_64-w64-mingw32
-
-# Create toolchain directory
-RUN mkdir -p /opt/toolchain
-
-# Create CMake toolchain file for MinGW cross-compilation
-RUN cat > /opt/toolchain/mingw-w64-x86_64.cmake << 'TOOLCHAIN_EOF'
-# CMake Toolchain file for MinGW-w64 cross-compilation
-set(CMAKE_SYSTEM_NAME Windows)
-set(CMAKE_SYSTEM_VERSION 1)
-set(CMAKE_SYSTEM_PROCESSOR x86_64)
-
-# Specify the cross compiler
-set(CMAKE_C_COMPILER /usr/bin/x86_64-w64-mingw32-gcc)
-set(CMAKE_CXX_COMPILER /usr/bin/x86_64-w64-mingw32-g++)
-set(CMAKE_RC_COMPILER /usr/bin/x86_64-w64-mingw32-windres)
-
-# Where to look for libraries, headers, and programs
-set(CMAKE_FIND_ROOT_PATH /usr/x86_64-w64-mingw32)
-
-# Adjust the default behavior of the FIND_XXX() commands:
-# search programs in the host environment
-set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
-# search headers and libraries in the target environment
-set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
-
-# Set compiler flags for static linking
-set(CMAKE_C_FLAGS "-static-libgcc -static" CACHE STRING "C compiler flags")
-set(CMAKE_CXX_FLAGS "-static-libgcc -static-libstdc++ -static" CACHE STRING "C++ compiler flags")
-set(CMAKE_EXE_LINKER_FLAGS "-static" CACHE STRING "Linker flags")
-
-# Windows specific defines
-add_definitions(-D_WIN32_WINNT=0x0601)
-add_definitions(-DWINVER=0x0601)
-TOOLCHAIN_EOF
+# Set Windows compilation environment variables for MSYS2
+ENV MSYSTEM=MINGW64
+ENV PATH="/mingw64/bin:/usr/local/bin:/usr/bin:/bin"
+ENV CC=gcc
+ENV CXX=g++
+ENV PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
 
 # Create build helper script directory
 RUN mkdir -p /opt/scripts
 
-# Create build helper script for Windows compilation
+# Create MSYS2 build helper script
 RUN cat > /opt/scripts/build-windows.sh << 'SCRIPT_EOF'
 #!/bin/bash
-# Helper script for building Windows executables with CMake
+# MSYS2 Windows build script
 
 set -e
 
-# Parse arguments
 PROJECT_DIR="${1:-.}"
 BUILD_TYPE="${2:-Release}"
 BUILD_DIR="${3:-build-windows}"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Windows Cross-Compilation Build Script${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo -e "${YELLOW}Project Directory:${NC} $PROJECT_DIR"
-echo -e "${YELLOW}Build Type:${NC} $BUILD_TYPE"
-echo -e "${YELLOW}Build Directory:${NC} $BUILD_DIR"
+echo "========================================="
+echo "MSYS2 Windows Build Script"
+echo "========================================="
+echo "Project Directory: $PROJECT_DIR"
+echo "Build Type: $BUILD_TYPE"
+echo "Build Directory: $BUILD_DIR"
 echo ""
 
 # Check if project directory exists
 if [ ! -d "$PROJECT_DIR" ]; then
-    echo -e "${RED}Error: Project directory '$PROJECT_DIR' does not exist${NC}"
+    echo "Error: Project directory '$PROJECT_DIR' does not exist"
     exit 1
 fi
 
@@ -117,13 +58,13 @@ cd "$PROJECT_DIR"
 
 # Check for CMakeLists.txt
 if [ ! -f "CMakeLists.txt" ]; then
-    echo -e "${RED}Error: CMakeLists.txt not found in $PROJECT_DIR${NC}"
+    echo "Error: CMakeLists.txt not found in $PROJECT_DIR"
     exit 1
 fi
 
 # Clean build directory if requested
 if [ "$4" == "clean" ]; then
-    echo -e "${YELLOW}Cleaning build directory...${NC}"
+    echo "Cleaning build directory..."
     rm -rf "$BUILD_DIR"
 fi
 
@@ -131,56 +72,45 @@ fi
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# Configure with CMake for Windows cross-compilation
-echo -e "${YELLOW}Configuring with CMake...${NC}"
+# Configure with CMake for Windows using MSYS2
+echo "Configuring with CMake..."
 cmake .. \
-    -DCMAKE_TOOLCHAIN_FILE=/opt/toolchain/mingw-w64-x86_64.cmake \
+    -G "MSYS Makefiles" \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    -DCMAKE_VERBOSE_MAKEFILE=ON
+    -DCMAKE_INSTALL_PREFIX=_install
 
 # Build
-echo -e "${YELLOW}Building...${NC}"
-make -j$(nproc) VERBOSE=1
+echo "Building..."
+make -j$(nproc)
 
 echo ""
-echo -e "${GREEN}========================================${NC}"
-echo -e "${GREEN}Build completed successfully!${NC}"
-echo -e "${GREEN}========================================${NC}"
-echo -e "${YELLOW}Output files:${NC}"
+echo "========================================="
+echo "Build completed successfully!"
+echo "========================================="
+echo "Output files:"
 find . -name "*.exe" -type f -exec ls -lh {} \;
 find . -name "*.dll" -type f -exec ls -lh {} \;
-
-# Optional: Test with Wine if executable found
-if command -v wine64 &> /dev/null; then
-    EXE_FILE=$(find . -name "*.exe" -type f | head -n 1)
-    if [ -n "$EXE_FILE" ]; then
-        echo ""
-        echo -e "${YELLOW}Testing executable with Wine:${NC}"
-        echo -e "${YELLOW}File:${NC} $EXE_FILE"
-        wine64 "$EXE_FILE" --version 2>/dev/null || echo -e "${YELLOW}Note: Executable created but may need Windows to run properly${NC}"
-    fi
-fi
 SCRIPT_EOF
 
 # Make build script executable
 RUN chmod +x /opt/scripts/build-windows.sh
 
-# Create a simple test script
+# Create MSYS2 test script
 RUN cat > /opt/scripts/test-toolchain.sh << 'TEST_EOF'
 #!/bin/bash
-# Test if the cross-compilation toolchain is working
+# Test MSYS2 toolchain
 
-echo "Testing MinGW-w64 toolchain..."
+echo "Testing MSYS2 MinGW-w64 toolchain..."
 echo ""
 
 # Test C compiler
 echo "C Compiler version:"
-x86_64-w64-mingw32-gcc --version | head -n 1
+gcc --version | head -n 1
 
-# Test C++ compiler
+# Test C++ compiler  
 echo ""
 echo "C++ Compiler version:"
-x86_64-w64-mingw32-g++ --version | head -n 1
+g++ --version | head -n 1
 
 # Test CMake
 echo ""
@@ -194,25 +124,22 @@ cat > /tmp/test.c << 'CODE_EOF'
 
 int main() {
     printf("Hello from Windows executable!\n");
-    printf("Compiled with MinGW-w64\n");
+    printf("Compiled with MSYS2 MinGW-w64\n");
     return 0;
 }
 CODE_EOF
 
 echo ""
 echo "Compiling test program..."
-x86_64-w64-mingw32-gcc -static -o /tmp/test.exe /tmp/test.c
+gcc -static -o /tmp/test.exe /tmp/test.c
 
 if [ -f /tmp/test.exe ]; then
     echo "✓ Test executable created successfully"
     echo "  Size: $(ls -lh /tmp/test.exe | awk '{print $5}')"
     echo "  Type: $(file /tmp/test.exe | cut -d: -f2)"
-    
-    if command -v wine64 &> /dev/null; then
-        echo ""
-        echo "Running test executable with Wine:"
-        wine64 /tmp/test.exe 2>/dev/null
-    fi
+    echo ""
+    echo "Running test executable:"
+    /tmp/test.exe
 else
     echo "✗ Failed to create test executable"
 fi
@@ -224,9 +151,9 @@ RUN chmod +x /opt/scripts/test-toolchain.sh
 
 # Create usage instructions
 RUN cat > /opt/USAGE.md << 'USAGE_EOF'
-# Windows Cross-Compilation Docker Container
+# MSYS2 Windows Compilation Docker Container
 
-This container provides a complete toolchain for cross-compiling C/C++ applications for Windows using MinGW-w64.
+This container provides MSYS2 environment for compiling native Windows applications.
 
 ## Quick Start
 
@@ -238,14 +165,14 @@ This container provides a complete toolchain for cross-compiling C/C++ applicati
 ### 2. Manual compilation:
 ```bash
 # For a C program
-x86_64-w64-mingw32-gcc -static -o program.exe program.c
+gcc -static -o program.exe program.c
 
-# For a C++ program
-x86_64-w64-mingw32-g++ -static -o program.exe program.cpp
+# For a C++ program  
+g++ -static -o program.exe program.cpp
 
 # Using CMake manually
 mkdir build && cd build
-cmake .. -DCMAKE_TOOLCHAIN_FILE=/opt/toolchain/mingw-w64-x86_64.cmake
+cmake .. -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release
 make
 ```
 
@@ -256,37 +183,28 @@ make
 
 ## Environment Variables
 
-- CC: x86_64-w64-mingw32-gcc
-- CXX: x86_64-w64-mingw32-g++
-- AR: x86_64-w64-mingw32-ar
-- STRIP: x86_64-w64-mingw32-strip
+- MSYSTEM: MINGW64
+- CC: gcc
+- CXX: g++
+- PATH: /mingw64/bin:/usr/local/bin:/usr/bin:/bin
 
 ## Available Tools
 
-- MinGW-w64 GCC/G++ compilers
-- CMake with Windows toolchain file
-- Wine64 for testing executables
+- MSYS2 MinGW-w64 GCC/G++ compilers
+- CMake with MSYS Makefiles generator
+- Native Windows executable generation
 - Build helper scripts
-
-## CMake Toolchain File
-
-Located at: `/opt/toolchain/mingw-w64-x86_64.cmake`
-
-This file configures CMake to use the MinGW-w64 cross-compiler for building Windows executables.
 
 ## Notes
 
-- Executables are statically linked by default to avoid DLL dependencies
-- Wine is installed for basic testing, but full functionality may require Windows
+- This uses MSYS2 native Windows compilation (not cross-compilation)
+- Executables are native Windows PE format
+- No Wine needed - executables run directly in Windows environment
 - The toolchain targets 64-bit Windows (x86_64)
 USAGE_EOF
 
 # Set working directory
 WORKDIR /workspace
 
-# Print usage information on container start
-RUN echo '#!/bin/bash\ncat /opt/USAGE.md' > /opt/scripts/welcome.sh && \
-    chmod +x /opt/scripts/welcome.sh
-    
 # Keep container running without executing anything
 CMD ["tail", "-f", "/dev/null"]
