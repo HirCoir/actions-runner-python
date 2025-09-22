@@ -1,19 +1,6 @@
 #!/bin/bash
 set -e
 
-# Cleanup function for graceful shutdown
-cleanup() {
-    echo "Shutting down runner gracefully..."
-    if [ -f ".runner" ]; then
-        echo "Removing runner registration..."
-        ./config.sh remove --token "$GITHUB_TOKEN" || true
-    fi
-    exit 0
-}
-
-# Set up signal handlers for graceful shutdown
-trap cleanup SIGTERM SIGINT SIGQUIT
-
 # Check required environment variables
 if [ -z "$GITHUB_URL" ]; then
     echo "Error: GITHUB_URL environment variable is required"
@@ -30,17 +17,14 @@ if [ -z "$RUNNER_NAME" ]; then
     RUNNER_NAME=$(hostname)
 fi
 
-# Force cleanup any existing sessions first
-echo "Cleaning up any existing runner sessions..."
+# Remove existing runner if it exists
+echo "Removing any existing runner registration..."
 ./config.sh remove --token "$GITHUB_TOKEN" || true
 
-# Wait a moment to ensure session cleanup
+# Wait a moment to ensure cleanup is complete
 sleep 2
 
-# Remove any leftover credential files
-rm -f .credentials .credentials_rsaparams .runner || true
-
-# Configure runner with ephemeral flag to prevent session conflicts
+# Configure runner
 echo "Configuring GitHub Actions Runner..."
 ./config.sh \
     --url "$GITHUB_URL" \
