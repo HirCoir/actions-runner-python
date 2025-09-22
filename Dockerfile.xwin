@@ -1,5 +1,6 @@
-# Dockerfile para compilación cruzada de C/C++ para Windows desde Linux
-# Utiliza Clang/LLVM, CMake, xwin para el SDK de Windows, y Wine para pruebas.
+# Dockerfile para compilación cruzada de C/C++ para Windows desde Linux (vFinal)
+# Utiliza Clang/LLVM, CMake, Ninja, xwin para el SDK de Windows, y Wine para pruebas.
+
 FROM debian:bullseye-slim
 
 ENV KEYRINGS=/usr/share/keyrings
@@ -19,17 +20,23 @@ RUN set -eux; \
     echo "deb [signed-by=$KEYRINGS/winehq.gpg] https://dl.winehq.org/wine-builds/debian/ bullseye main" > /etc/apt/sources.list.d/winehq.list; \
     apt-get update
 
-# 2. Instalar las herramientas de compilación y Wine
+# 2. Instalar las herramientas de compilación, Ninja y Wine
 RUN set -eux; \
     apt-get install -y --no-install-recommends \
+        # Toolchain de LLVM/Clang
         clang-15 \
         llvm-15 \
         lld-15 \
+        # Wine para ejecutar/probar los ejecutables de Windows
         winehq-staging \
+        # Herramientas de construcción
         cmake \
         make \
         git \
-        pkg-config; \
+        pkg-config \
+        # Generador de compilación Ninja (esencial para la compatibilidad con clang-cl)
+        ninja-build; \
+    # Crear enlaces simbólicos para las herramientas
     ln -s clang-15 /usr/bin/clang; \
     ln -s clang++-15 /usr/bin/clang++; \
     ln -s lld-15 /usr/bin/ld.lld; \
@@ -58,9 +65,13 @@ set(CMAKE_FIND_ROOT_PATH /xwin)
 set(CMAKE_FIND_ROOT_PATH_MODE_PROGRAM NEVER)
 set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
-set(FLAGS "/imsvc/xwin/crt/include /imsvc/xwin/sdk/include/ucrt /imsvc/xwin/sdk/include/um /imsvc/xwin/sdk/include/shared")
+
+# Flags del compilador: Se añade /MD para forzar el uso del C Runtime de Release.
+# Esto evita el error "msvcrtd.lib not found" durante la prueba del compilador de CMake.
+set(FLAGS "/MD /imsvc/xwin/crt/include /imsvc/xwin/sdk/include/ucrt /imsvc/xwin/sdk/include/um /imsvc/xwin/sdk/include/shared")
 set(CMAKE_C_FLAGS_INIT "${FLAGS}")
 set(CMAKE_CXX_FLAGS_INIT "${FLAGS}")
+
 set(LINKER_FLAGS "/LIBPATH:/xwin/crt/lib/x86_64 /LIBPATH:/xwin/sdk/lib/um/x86_64 /LIBPATH:/xwin/sdk/lib/ucrt/x86_64")
 set(CMAKE_EXE_LINKER_FLAGS_INIT "${LINKER_FLAGS}")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "${LINKER_FLAGS}")
@@ -78,9 +89,9 @@ cat > /opt/scripts/build-project.sh << 'EOF'
 set -e
 PROJECT_DIR="${1:-.}"
 BUILD_TYPE="${2:-Release}"
-echo ">>> Configurando el proyecto CMake en $PROJECT_DIR"
+echo ">>> Configurando el proyecto CMake en $PROJECT_DIR con Ninja"
 echo ">>> Tipo de Build: $BUILD_TYPE"
-cmake -S "$PROJECT_DIR" -B build-windows \
+cmake -G Ninja -S "$PROJECT_DIR" -B build-windows \
     -DCMAKE_TOOLCHAIN_FILE=/opt/toolchain/windows-clang.cmake \
     -DCMAKE_BUILD_TYPE="$BUILD_TYPE"
 echo ">>> Compilando el proyecto..."
@@ -93,12 +104,11 @@ RUN chmod +x /opt/scripts/build-project.sh
 
 # 7. Limpieza final para reducir el tamaño de la imagen
 RUN set -eux; \
-    # CORRECCIÓN: Se eliminó el comando `apt-get purge` que estaba rompiendo la imagen.
-    # Solo limpiamos los cachés, que es seguro.
+    # Limpiamos solo los cachés y archivos temporales, que es seguro.
     rm -rf /var/lib/apt/lists/*; \
     rm /usr/local/bin/xwin; \
     rm -rf /root/.xwin-cache
 
 # Directorio de trabajo por defecto
 WORKDIR /workspace
-CMD ["tail", "-f", "/dev/null"]
+CMD ["bash"]
