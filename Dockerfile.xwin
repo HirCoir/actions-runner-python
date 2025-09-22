@@ -53,12 +53,9 @@ cat > /opt/toolchain/windows-clang.cmake << 'EOF'
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR x86_64)
 
-# SOLUCIÓN 1: Evitar el error de "msvcrtd.lib" durante la prueba del compilador.
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-# SOLUCIÓN 2: Especificar explícitamente el estándar de C++.
-# Esto soluciona el error de "target_compile_features no known features".
-# Asumimos C++17, que es lo más común. Cambia a 14 o 20 si es necesario.
+# SOLUCIÓN FINAL: Especificar explícitamente el estándar de C++.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
