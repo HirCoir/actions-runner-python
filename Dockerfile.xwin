@@ -1,7 +1,7 @@
 # Windows cross-compilation using xwin and clang-cl
-FROM rust:1.75-slim-bullseye
+FROM rust:1.81-slim-bullseye
 
-ENV KEYRINGS /usr/local/share/keyrings
+ENV KEYRINGS=/usr/local/share/keyrings
 
 # Install prerequisites and LLVM/Clang toolchain
 RUN set -eux; \
