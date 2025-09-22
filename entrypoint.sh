@@ -21,9 +21,6 @@ fi
 echo "Removing any existing runner registration..."
 ./config.sh remove --token "$GITHUB_TOKEN" || true
 
-# Wait a moment to ensure cleanup is complete
-sleep 2
-
 # Configure runner
 echo "Configuring GitHub Actions Runner..."
 ./config.sh \
@@ -34,8 +31,7 @@ echo "Configuring GitHub Actions Runner..."
     --labels "$RUNNER_LABELS" \
     --runnergroup "$RUNNER_GROUP" \
     --unattended \
-    --replace \
-    --ephemeral
+    --replace
 
 # Start runner
 echo "Starting GitHub Actions Runner..."

@@ -1,10 +1,14 @@
 # Multi-stage Dockerfile for GitHub Actions Self-Hosted Runner with Python
 # Stage 1: Download and prepare runner
-FROM ubuntu:22.04 AS runner-base
+FROM --platform=$TARGETPLATFORM ubuntu:22.04 AS runner-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
 ENV RUNNER_VERSION=2.328.0
+
+# Use build arguments for platform detection
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
 
 # Install base dependencies
 RUN apt-get update && apt-get install -y \
@@ -23,27 +27,28 @@ RUN useradd -m -s /bin/bash runner && \
     usermod -aG sudo runner && \
     echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-# Download and extract GitHub Actions Runner based on architecture
+# Download and extract GitHub Actions Runner based on target platform
 WORKDIR /home/runner
-RUN ARCH=$(dpkg --print-architecture) && \
-    case ${ARCH} in \
-        amd64) \
+RUN echo "Target platform: $TARGETPLATFORM" && \
+    case ${TARGETPLATFORM} in \
+        linux/amd64) \
             RUNNER_ARCH=x64 && \
             RUNNER_CHECKSUM=01066fad3a2893e63e6ca880ae3a1fad5bf9329d60e77ee15f2b97c148c3cd4e \
             ;; \
-        arm64) \
+        linux/arm64) \
             RUNNER_ARCH=arm64 && \
             RUNNER_CHECKSUM=b801b9809c4d9301932bccadf57ca13533073b2aa9fa9b8e625a8db905b5d8eb \
             ;; \
-        armhf) \
+        linux/arm/v7) \
             RUNNER_ARCH=arm && \
             RUNNER_CHECKSUM=530bb83124f38edc9b410fbcc0a8b0baeaa336a14e3707acc8ca308fe0cb7540 \
             ;; \
         *) \
-            echo "Unsupported architecture: ${ARCH}" && \
+            echo "Unsupported platform: ${TARGETPLATFORM}" && \
             exit 1 \
             ;; \
     esac && \
+    echo "Downloading runner for architecture: ${RUNNER_ARCH}" && \
     curl -o actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz -L \
         https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz && \
     echo "${RUNNER_CHECKSUM}  actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz" | sha256sum -c && \
@@ -51,7 +56,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
     rm actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz
 
 # Stage 2: Final image with Python and development tools
-FROM ubuntu:22.04
+FROM --platform=$TARGETPLATFORM ubuntu:22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -143,7 +148,6 @@ COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 # Switch to runner user
 USER runner
 WORKDIR /home/runner
-
 
 # Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
