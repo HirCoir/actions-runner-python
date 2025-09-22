@@ -111,4 +111,4 @@ RUN set -eux; \
 
 # Directorio de trabajo por defecto
 WORKDIR /workspace
-CMD ["bash"]
+CMD ["tail", "-f", "/dev/null"]
