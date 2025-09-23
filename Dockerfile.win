@@ -116,6 +116,8 @@ RUN apt-get update && apt-get install -y \
     npm \
     # Docker CLI (for Docker-in-Docker scenarios)
     docker.io \
+    # >>> CAMBIO: Añadido xvfb para el servidor de pantalla virtual
+    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 # Install GitHub CLI
@@ -141,7 +143,14 @@ RUN dpkg --add-architecture i386 \
     && apt-get update \
     && apt-get install -y --install-recommends winehq-stable winetricks \
     && apt-get install -y wine-binfmt \
+    # >>> CAMBIO: Actualizar winetricks a la última versión para corregir el error de checksum
+    && wget -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
+    && chmod +x /usr/local/bin/winetricks \
     && rm -rf /var/lib/apt/lists/*
+
+# >>> CAMBIO: Configurar Wine para usar un entorno de 32 bits para máxima compatibilidad
+ENV WINEARCH=win32
+ENV WINEPREFIX=/home/runner/.wine
 
 # Create runner user
 RUN useradd -m -s /bin/bash runner && \
@@ -156,9 +165,10 @@ COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 USER runner
 WORKDIR /home/runner
 
-# Initialize Wine and install Visual C++ runtimes
-RUN wineboot --init \
-    && winetricks -q --force vcrun2008 vcrun2010 vcrun2012 vcrun2013 vcrun2015 vcrun2017 vcrun2019 vcrun2022
+# >>> CAMBIO: Inicializar Wine e instalar Visual C++ runtimes usando xvfb-run
+# Esto crea un entorno gráfico virtual para que Wine y Winetricks funcionen sin errores.
+RUN xvfb-run -a wineboot --init && \
+    xvfb-run -a winetricks -q --force vcrun2008 vcrun2010 vcrun2012 vcrun2013 vcrun2015 vcrun2017 vcrun2019 vcrun2022
 
 # Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
