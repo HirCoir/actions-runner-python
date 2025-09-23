@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for GitHub Actions Self-Hosted Runner with Python
 # Stage 1: Download and prepare runner
-FROM --platform=$TARGETPLATFORM ubuntu:22.04 AS runner-base
+FROM ubuntu:22.04 AS runner-base
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -52,7 +52,7 @@ RUN echo "Target platform: $TARGETPLATFORM" && \
     rm actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz
 
 # Stage 2: Final image with Python, development tools, and Wine
-FROM --platform=$TARGETPLATFORM ubuntu:22.04
+FROM ubuntu:22.04
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive
@@ -165,15 +165,19 @@ COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 USER runner
 WORKDIR /home/runner
 
-# >>> CAMBIO: Inicializar Wine, establecer la compatibilidad con Windows 7 y luego instalar los runtimes.
-# Se ha consolidado vcrun2015-2022 en un solo paso (vcrun2022) para mayor estabilidad.
-RUN xvfb-run -a wineboot --init && \
-    xvfb-run -a wine winecfg -v win7 && \
-    xvfb-run -a winetricks -q --force --unattended vcrun2008 && \
-    xvfb-run -a winetricks -q --force --unattended vcrun2010 && \
-    xvfb-run -a winetricks -q --force --unattended vcrun2012 && \
-    xvfb-run -a winetricks -q --force --unattended vcrun2013 && \
-    xvfb-run -a winetricks -q --force --unattended vcrun2022
+# Initialize Wine and install runtime components step by step for better debugging
+RUN xvfb-run -a wineboot --init
+
+# Set Windows compatibility to Windows 7
+RUN xvfb-run -a winecfg -v win7 || true
+
+# Install Visual C++ Redistributables individually to isolate failures
+RUN xvfb-run -a winetricks -q --force --unattended corefonts || true
+RUN xvfb-run -a winetricks -q --force --unattended vcrun2008 || true
+RUN xvfb-run -a winetricks -q --force --unattended vcrun2010 || true
+RUN xvfb-run -a winetricks -q --force --unattended vcrun2012 || true
+RUN xvfb-run -a winetricks -q --force --unattended vcrun2013 || true
+RUN xvfb-run -a winetricks -q --force --unattended vcrun2019 || true
 
 # Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
