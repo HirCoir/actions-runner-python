@@ -136,6 +136,7 @@ RUN ln -s /usr/bin/python3 /usr/bin/python
 RUN python3 -m pip install --upgrade pip setuptools wheel
 
 # Install Wine, Winetricks, and Visual C++ Redistributables
+# Add i386 architecture for 32-bit support
 RUN dpkg --add-architecture i386 \
     && mkdir -pm755 /etc/apt/keyrings \
     && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
@@ -143,13 +144,25 @@ RUN dpkg --add-architecture i386 \
     && apt-get update \
     && apt-get install -y --install-recommends winehq-stable winetricks \
     && apt-get install -y wine-binfmt \
+    # Install additional 32-bit libraries for better compatibility
+    && apt-get install -y \
+        lib32z1 \
+        libc6-i386 \
+        libgcc1:i386 \
+        libstdc++6:i386 \
+        libx11-6:i386 \
+        libxext6:i386 \
+        libxrender1:i386 \
+        libxtst6:i386 \
+        libxi6:i386 \
     # Update winetricks to the latest version
     && wget -O /usr/local/bin/winetricks https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks \
     && chmod +x /usr/local/bin/winetricks \
     && rm -rf /var/lib/apt/lists/*
 
-# Configure Wine for a 32-bit environment for max compatibility
-ENV WINEARCH=win32
+# Configure Wine for 64-bit environment (compatible with both 32 and 64-bit apps)
+# Remove the WINEARCH=win32 restriction
+ENV WINEARCH=win64
 ENV WINEPREFIX=/home/runner/.wine
 
 # Create runner user
@@ -165,19 +178,28 @@ COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 USER runner
 WORKDIR /home/runner
 
-# Initialize Wine and install runtime components step by step for better debugging
+# Initialize Wine with 64-bit prefix (supports both 32 and 64-bit applications)
 RUN xvfb-run -a wineboot --init
 
-# Set Windows compatibility to Windows 7
-RUN xvfb-run -a winecfg -v win7 || true
+# Set Windows compatibility to Windows 10 for better compatibility
+RUN xvfb-run -a winecfg -v win10 || true
 
-# Install Visual C++ Redistributables individually to isolate failures
+# Install Visual C++ Redistributables for both architectures
+# Install 64-bit redistributables
 RUN xvfb-run -a winetricks -q --force --unattended corefonts || true
 RUN xvfb-run -a winetricks -q --force --unattended vcrun2008 || true
 RUN xvfb-run -a winetricks -q --force --unattended vcrun2010 || true
 RUN xvfb-run -a winetricks -q --force --unattended vcrun2012 || true
 RUN xvfb-run -a winetricks -q --force --unattended vcrun2013 || true
+RUN xvfb-run -a winetricks -q --force --unattended vcrun2015 || true
 RUN xvfb-run -a winetricks -q --force --unattended vcrun2019 || true
+
+# Install .NET Framework for better Windows application compatibility
+RUN xvfb-run -a winetricks -q --force --unattended dotnet48 || true
+
+# Install additional useful Windows components
+RUN xvfb-run -a winetricks -q --force --unattended d3dx9 || true
+RUN xvfb-run -a winetricks -q --force --unattended d3dx11_43 || true
 
 # Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
