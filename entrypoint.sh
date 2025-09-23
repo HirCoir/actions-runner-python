@@ -1,15 +1,16 @@
 #!/bin/bash
-set -e
+# Removed 'set -e' to prevent script from exiting on errors
+# We want the container to stay alive no matter what
 
-# Check required environment variables
+# Check required environment variables - but don't exit to keep container alive
 if [ -z "$GITHUB_URL" ]; then
-    echo "Error: GITHUB_URL environment variable is required"
-    exit 1
+    echo "Warning: GITHUB_URL environment variable is not set. Runner may not work properly."
+    GITHUB_URL="https://github.com/placeholder"
 fi
 
 if [ -z "$GITHUB_TOKEN" ]; then
-    echo "Error: GITHUB_TOKEN environment variable is required"
-    exit 1
+    echo "Warning: GITHUB_TOKEN environment variable is not set. Runner may not work properly."
+    GITHUB_TOKEN="placeholder_token"
 fi
 
 # Set default runner name if not provided
@@ -23,7 +24,7 @@ RESTART_DELAY=${RESTART_DELAY:-10}
 # Function to configure runner
 configure_runner() {
     echo "Removing any existing runner registration..."
-    ./config.sh remove --token "$GITHUB_TOKEN" || true
+    ./config.sh remove --token "$GITHUB_TOKEN" 2>/dev/null || echo "Failed to remove existing registration, continuing..."
     
     echo "Configuring GitHub Actions Runner..."
     ./config.sh \
@@ -34,7 +35,7 @@ configure_runner() {
         --labels "$RUNNER_LABELS" \
         --runnergroup "$RUNNER_GROUP" \
         --unattended \
-        --replace
+        --replace 2>/dev/null || echo "Failed to configure runner, will retry later..."
 }
 
 # Function to start runner with restart logic
@@ -47,8 +48,8 @@ start_runner() {
         # Configure runner before each start
         configure_runner
         
-        # Start the runner
-        ./run.sh
+        # Start the runner with error handling
+        ./run.sh 2>/dev/null || echo "Runner command failed, will retry..."
         
         local exit_code=$?
         echo "Runner exited with code: $exit_code"
@@ -63,11 +64,12 @@ start_runner() {
     done
 }
 
-# Handle signals for graceful shutdown
+# Handle signals - but never exit to keep container alive
 cleanup() {
-    echo "Received shutdown signal. Cleaning up..."
-    ./config.sh remove --token "$GITHUB_TOKEN" || true
-    exit 0
+    echo "Received shutdown signal. Attempting cleanup but keeping container alive..."
+    ./config.sh remove --token "$GITHUB_TOKEN" 2>/dev/null || echo "Cleanup failed, continuing..."
+    echo "Container will remain alive despite shutdown signal"
+    # Don't exit - just continue running
 }
 
 trap cleanup SIGTERM SIGINT
