@@ -165,17 +165,15 @@ COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 USER runner
 WORKDIR /home/runner
 
-# >>> CAMBIO: Inicializar Wine e instalar cada Visual C++ runtime de forma individual y desatendida
-# Esto es mucho más estable que ejecutarlos todos en una sola línea.
+# >>> CAMBIO: Inicializar Wine, establecer la compatibilidad con Windows 7 y luego instalar los runtimes.
+# Se ha consolidado vcrun2015-2022 en un solo paso (vcrun2022) para mayor estabilidad.
 RUN xvfb-run -a wineboot --init && \
-    xvfb-run -a winetricks -q --unattended vcrun2008 && \
-    xvfb-run -a winetricks -q --unattended vcrun2010 && \
-    xvfb-run -a winetricks -q --unattended vcrun2012 && \
-    xvfb-run -a winetricks -q --unattended vcrun2013 && \
-    xvfb-run -a winetricks -q --unattended vcrun2015 && \
-    xvfb-run -a winetricks -q --unattended vcrun2017 && \
-    xvfb-run -a winetricks -q --unattended vcrun2019 && \
-    xvfb-run -a winetricks -q --unattended vcrun2022
+    xvfb-run -a wine winecfg -v win7 && \
+    xvfb-run -a winetricks -q --force --unattended vcrun2008 && \
+    xvfb-run -a winetricks -q --force --unattended vcrun2010 && \
+    xvfb-run -a winetricks -q --force --unattended vcrun2012 && \
+    xvfb-run -a winetricks -q --force --unattended vcrun2013 && \
+    xvfb-run -a winetricks -q --force --unattended vcrun2022
 
 # Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
