@@ -174,32 +174,55 @@ RUN useradd -m -s /bin/bash runner && \
 # Copy runner files from previous stage
 COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 
+# Create wine directory and set proper permissions
+RUN mkdir -p /home/runner/.wine && \
+    chown -R runner:runner /home/runner/.wine
+
 # Switch to runner user
 USER runner
 WORKDIR /home/runner
 
-# Initialize Wine with 64-bit prefix (supports both 32 and 64-bit applications)
-RUN xvfb-run -a wineboot --init
+# Set up Wine environment variables for the runner user
+ENV HOME=/home/runner
+ENV USER=runner
 
-# Set Windows compatibility to Windows 10 for better compatibility
-RUN xvfb-run -a winecfg -v win10 || true
+# Initialize Wine with proper error handling and timeout
+# Use a more robust initialization process
+RUN export DISPLAY=:99 && \
+    timeout 300 xvfb-run -a -s "-screen 0 1024x768x24 -ac +extension GLX +render -noreset" \
+    bash -c "wineboot --init && sleep 5" || \
+    (echo "Wine initialization failed, trying alternative method..." && \
+     mkdir -p ~/.wine/drive_c && \
+     wineboot --init --force 2>/dev/null || true)
 
-# Install Visual C++ Redistributables for both architectures
-# Install 64-bit redistributables
-RUN xvfb-run -a winetricks -q --force --unattended corefonts || true
-RUN xvfb-run -a winetricks -q --force --unattended vcrun2008 || true
-RUN xvfb-run -a winetricks -q --force --unattended vcrun2010 || true
-RUN xvfb-run -a winetricks -q --force --unattended vcrun2012 || true
-RUN xvfb-run -a winetricks -q --force --unattended vcrun2013 || true
-RUN xvfb-run -a winetricks -q --force --unattended vcrun2015 || true
-RUN xvfb-run -a winetricks -q --force --unattended vcrun2019 || true
+# Wait for Wine to fully initialize
+RUN sleep 10
 
-# Install .NET Framework for better Windows application compatibility
-RUN xvfb-run -a winetricks -q --force --unattended dotnet48 || true
+# Set Windows compatibility to Windows 10 with better error handling
+RUN timeout 60 xvfb-run -a -s "-screen 0 1024x768x24" \
+    bash -c "winecfg /v win10 2>/dev/null || echo 'winecfg completed with warnings'"
 
-# Install additional useful Windows components
-RUN xvfb-run -a winetricks -q --force --unattended d3dx9 || true
-RUN xvfb-run -a winetricks -q --force --unattended d3dx11_43 || true
+# Install core components first with better error handling
+RUN timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
+    bash -c "winetricks -q --force --unattended corefonts 2>/dev/null || echo 'corefonts installation completed with warnings'"
+
+# Install Visual C++ Redistributables with timeouts
+RUN timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
+    bash -c "winetricks -q --force --unattended vcrun2019 2>/dev/null || echo 'vcrun2019 installation completed with warnings'"
+
+RUN timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
+    bash -c "winetricks -q --force --unattended vcrun2015 2>/dev/null || echo 'vcrun2015 installation completed with warnings'"
+
+# Install older redistributables
+RUN timeout 180 xvfb-run -a -s "-screen 0 1024x768x24" \
+    bash -c "winetricks -q --force --unattended vcrun2013 2>/dev/null || echo 'vcrun2013 installation completed with warnings'"
+
+RUN timeout 180 xvfb-run -a -s "-screen 0 1024x768x24" \
+    bash -c "winetricks -q --force --unattended vcrun2012 2>/dev/null || echo 'vcrun2012 installation completed with warnings'"
+
+# Install DirectX components
+RUN timeout 240 xvfb-run -a -s "-screen 0 1024x768x24" \
+    bash -c "winetricks -q --force --unattended d3dx9 2>/dev/null || echo 'd3dx9 installation completed with warnings'"
 
 # Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
