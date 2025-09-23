@@ -1,210 +1,168 @@
+# Multi-stage Dockerfile for GitHub Actions Self-Hosted Runner with Python
+# Stage 1: Download and prepare runner
+FROM --platform=$TARGETPLATFORM ubuntu:22.04 AS runner-base
 
-# Dockerfile for Windows Cross-Compilation using MSYS2
-FROM ghcr.io/msys2/msys2-docker-experimental
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV RUNNER_VERSION=2.327.1
 
-# Install base packages and development tools using msys2 command
-RUN msys2 -c "pacman -Syu --noconfirm" && \
-    msys2 -c "pacman -S --noconfirm --needed \
+# Use build arguments for platform detection
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+
+# Install base dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    unzip \
+    tar \
+    sudo \
     git \
-    base-devel \
-    mingw-w64-x86_64-toolchain \
-    mingw-w64-x86_64-cmake \
-    mingw-w64-x86_64-ninja \
-    mingw-w64-x86_64-pkg-config \
-    mingw-w64-x86_64-gcc \
-    mingw-w64-x86_64-gdb \
+    jq \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create runner user
+RUN useradd -m -s /bin/bash runner && \
+    usermod -aG sudo runner && \
+    echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+# Download and extract GitHub Actions Runner based on target platform
+WORKDIR /home/runner
+RUN echo "Target platform: $TARGETPLATFORM" && \
+    case ${TARGETPLATFORM} in \
+        linux/amd64) \
+            RUNNER_ARCH=x64 \
+            ;; \
+        linux/arm64) \
+            RUNNER_ARCH=arm64 \
+            ;; \
+        linux/arm/v7) \
+            RUNNER_ARCH=arm \
+            ;; \
+        *) \
+            echo "Unsupported platform: ${TARGETPLATFORM}" && \
+            exit 1 \
+            ;; \
+    esac && \
+    echo "Downloading runner for architecture: ${RUNNER_ARCH}" && \
+    curl -o actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz -L \
+        https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz && \
+    tar xzf ./actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz && \
+    rm actions-runner-linux-${RUNNER_ARCH}-${RUNNER_VERSION}.tar.gz
+
+# Stage 2: Final image with Python, development tools, and Wine
+FROM --platform=$TARGETPLATFORM ubuntu:22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# GitHub Actions Runner configuration environment variables
+ENV GITHUB_URL=""
+ENV RUNNER_NAME=""
+ENV RUNNER_LABELS=""
+ENV RUNNER_GROUP=""
+ENV RUNNER_WORK_DIR="_work"
+
+# Install system dependencies including Python
+RUN apt-get update && apt-get install -y \
+    # Base system tools
+    curl \
+    wget \
+    unzip \
+    tar \
+    sudo \
+    git \
+    jq \
+    ca-certificates \
+    software-properties-common \
+    apt-transport-https \
+    gnupg \
+    lsb-release \
+    # Python and development tools
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    python3-setuptools \
+    python3-wheel \
+    # Build tools and dependencies for Python packages
+    build-essential \
+    gcc \
+    g++ \
+    make \
+    cmake \
+    pkg-config \
+    # Dependencies for numpy, pandas, matplotlib
+    libopenblas-dev \
+    liblapack-dev \
+    gfortran \
+    libfreetype6-dev \
+    libpng-dev \
+    libjpeg-dev \
+    libffi-dev \
+    libssl-dev \
+    # Additional useful tools
     vim \
     nano \
-    wget \
-    curl" && \
-    msys2 -c "pacman -Scc --noconfirm"
+    htop \
+    tree \
+    zip \
+    unzip \
+    # Node.js (often needed for GitHub Actions)
+    nodejs \
+    npm \
+    # Docker CLI (for Docker-in-Docker scenarios)
+    docker.io \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set Windows compilation environment variables for MSYS2
-ENV MSYSTEM=MINGW64
-ENV PATH="/mingw64/bin:/usr/local/bin:/usr/bin:/bin"
-ENV CC=gcc
-ENV CXX=g++
-ENV PKG_CONFIG_PATH="/mingw64/lib/pkgconfig"
+# Install GitHub CLI
+RUN apt-get update && apt-get install -y wget gpg \
+    && wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor > /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+    && apt-get update --allow-insecure-repositories \
+    && apt-get install -y --allow-unauthenticated gh \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create build helper script directory
-RUN mkdir -p /opt/scripts
+# Create symbolic link for python command
+RUN ln -s /usr/bin/python3 /usr/bin/python
 
-# Create MSYS2 build helper script
-RUN cat > /opt/scripts/build-windows.sh << 'SCRIPT_EOF'
-#!/bin/bash
-# MSYS2 Windows build script
+# Upgrade pip
+RUN python3 -m pip install --upgrade pip setuptools wheel
 
-set -e
+# Install Wine, Winetricks, and Visual C++ Redistributables
+RUN dpkg --add-architecture i386 \
+    && mkdir -pm755 /etc/apt/keyrings \
+    && wget -O /etc/apt/keyrings/winehq-archive.key https://dl.winehq.org/wine-builds/winehq.key \
+    && wget -NP /etc/apt/sources.list.d/ https://dl.winehq.org/wine-builds/ubuntu/dists/jammy/winehq-jammy.sources \
+    && apt-get update \
+    && apt-get install -y --install-recommends winehq-stable winetricks \
+    && apt-get install -y wine-binfmt \
+    && rm -rf /var/lib/apt/lists/*
 
-PROJECT_DIR="${1:-.}"
-BUILD_TYPE="${2:-Release}"
-BUILD_DIR="${3:-build-windows}"
+# Create runner user
+RUN useradd -m -s /bin/bash runner && \
+    usermod -aG sudo runner && \
+    usermod -aG docker runner && \
+    echo "runner ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
 
-echo "========================================="
-echo "MSYS2 Windows Build Script"
-echo "========================================="
-echo "Project Directory: $PROJECT_DIR"
-echo "Build Type: $BUILD_TYPE"
-echo "Build Directory: $BUILD_DIR"
-echo ""
+# Copy runner files from previous stage
+COPY --from=runner-base --chown=runner:runner /home/runner /home/runner
 
-# Check if project directory exists
-if [ ! -d "$PROJECT_DIR" ]; then
-    echo "Error: Project directory '$PROJECT_DIR' does not exist"
-    exit 1
-fi
+# Switch to runner user
+USER runner
+WORKDIR /home/runner
 
-cd "$PROJECT_DIR"
+# Initialize Wine and install Visual C++ runtimes
+RUN wineboot --init \
+    && winetricks -q --force vcrun2008 vcrun2010 vcrun2012 vcrun2013 vcrun2015 vcrun2017 vcrun2019 vcrun2022
 
-# Check for CMakeLists.txt
-if [ ! -f "CMakeLists.txt" ]; then
-    echo "Error: CMakeLists.txt not found in $PROJECT_DIR"
-    exit 1
-fi
+# Copy and setup entrypoint script
+COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
+RUN chmod +x /home/runner/entrypoint.sh
 
-# Clean build directory if requested
-if [ "$4" == "clean" ]; then
-    echo "Cleaning build directory..."
-    rm -rf "$BUILD_DIR"
-fi
-
-# Create build directory
-mkdir -p "$BUILD_DIR"
-cd "$BUILD_DIR"
-
-# Configure with CMake for Windows using MSYS2
-echo "Configuring with CMake..."
-cmake .. \
-    -G "MSYS Makefiles" \
-    -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
-    -DCMAKE_INSTALL_PREFIX=_install
-
-# Build
-echo "Building..."
-make -j$(nproc)
-
-echo ""
-echo "========================================="
-echo "Build completed successfully!"
-echo "========================================="
-echo "Output files:"
-find . -name "*.exe" -type f -exec ls -lh {} \;
-find . -name "*.dll" -type f -exec ls -lh {} \;
-SCRIPT_EOF
-
-# Make build script executable
-RUN chmod +x /opt/scripts/build-windows.sh
-
-# Create MSYS2 test script
-RUN cat > /opt/scripts/test-toolchain.sh << 'TEST_EOF'
-#!/bin/bash
-# Test MSYS2 toolchain
-
-echo "Testing MSYS2 MinGW-w64 toolchain..."
-echo ""
-
-# Test C compiler
-echo "C Compiler version:"
-gcc --version | head -n 1
-
-# Test C++ compiler  
-echo ""
-echo "C++ Compiler version:"
-g++ --version | head -n 1
-
-# Test CMake
-echo ""
-echo "CMake version:"
-cmake --version | head -n 1
-
-# Create a simple test program
-cat > /tmp/test.c << 'CODE_EOF'
-#include <stdio.h>
-#include <windows.h>
-
-int main() {
-    printf("Hello from Windows executable!\n");
-    printf("Compiled with MSYS2 MinGW-w64\n");
-    return 0;
-}
-CODE_EOF
-
-echo ""
-echo "Compiling test program..."
-gcc -static -o /tmp/test.exe /tmp/test.c
-
-if [ -f /tmp/test.exe ]; then
-    echo "✓ Test executable created successfully"
-    echo "  Size: $(ls -lh /tmp/test.exe | awk '{print $5}')"
-    echo "  Type: $(file /tmp/test.exe | cut -d: -f2)"
-    echo ""
-    echo "Running test executable:"
-    /tmp/test.exe
-else
-    echo "✗ Failed to create test executable"
-fi
-
-rm -f /tmp/test.c /tmp/test.exe
-TEST_EOF
-
-RUN chmod +x /opt/scripts/test-toolchain.sh
-
-# Create usage instructions
-RUN cat > /opt/USAGE.md << 'USAGE_EOF'
-# MSYS2 Windows Compilation Docker Container
-
-This container provides MSYS2 environment for compiling native Windows applications.
-
-## Quick Start
-
-### 1. Build a CMake project for Windows:
-```bash
-/opt/scripts/build-windows.sh /path/to/project Release
-```
-
-### 2. Manual compilation:
-```bash
-# For a C program
-gcc -static -o program.exe program.c
-
-# For a C++ program  
-g++ -static -o program.exe program.cpp
-
-# Using CMake manually
-mkdir build && cd build
-cmake .. -G "MSYS Makefiles" -DCMAKE_BUILD_TYPE=Release
-make
-```
-
-### 3. Test the toolchain:
-```bash
-/opt/scripts/test-toolchain.sh
-```
-
-## Environment Variables
-
-- MSYSTEM: MINGW64
-- CC: gcc
-- CXX: g++
-- PATH: /mingw64/bin:/usr/local/bin:/usr/bin:/bin
-
-## Available Tools
-
-- MSYS2 MinGW-w64 GCC/G++ compilers
-- CMake with MSYS Makefiles generator
-- Native Windows executable generation
-- Build helper scripts
-
-## Notes
-
-- This uses MSYS2 native Windows compilation (not cross-compilation)
-- Executables are native Windows PE format
-- No Wine needed - executables run directly in Windows environment
-- The toolchain targets 64-bit Windows (x86_64)
-USAGE_EOF
-
-# Set working directory
-WORKDIR /workspace
-
-# Keep container running without executing anything
-CMD ["tail", "-f", "/dev/null"]
+# Set entrypoint
+ENTRYPOINT ["./entrypoint.sh"]
