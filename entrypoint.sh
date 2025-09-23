@@ -53,11 +53,8 @@ start_runner() {
         local exit_code=$?
         echo "Runner exited with code: $exit_code"
         
-        # If exit code is 0 or 2 (graceful shutdown), don't restart
-        if [ $exit_code -eq 0 ] || [ $exit_code -eq 2 ]; then
-            echo "Runner shutdown gracefully. Exiting..."
-            break
-        fi
+        # Never exit - always restart regardless of exit code
+        echo "Runner will restart regardless of exit code to keep container alive..."
         
         echo "Runner crashed or exited unexpectedly. Restarting in $RESTART_DELAY seconds..."
         sleep $RESTART_DELAY
@@ -75,5 +72,18 @@ cleanup() {
 
 trap cleanup SIGTERM SIGINT
 
-# Start the runner with restart logic
+# Start the runner with restart logic and infinite fallback
 start_runner
+
+# Infinite fallback loop to ensure container never stops
+echo "Main runner function ended unexpectedly. Starting infinite fallback loop..."
+while true; do
+    echo "Container is alive - $(date)"
+    sleep 30
+    
+    # Try to restart the runner every 5 minutes
+    if [ $(($(date +%s) % 300)) -eq 0 ]; then
+        echo "Attempting to restart runner..."
+        start_runner &
+    fi
+done
