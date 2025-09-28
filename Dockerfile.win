@@ -190,10 +190,17 @@ WORKDIR /home/runner
 # Set up Wine environment variables for the runner user
 ENV HOME=/home/runner
 ENV USER=runner
+ENV XDG_RUNTIME_DIR=/tmp/runtime-runner
+ENV DISPLAY=:99
+
+# Create XDG runtime directory
+RUN mkdir -p /tmp/runtime-runner && \
+    chmod 700 /tmp/runtime-runner
 
 # Initialize Wine with proper error handling and timeout
 # Use a more robust initialization process
 RUN export DISPLAY=:99 && \
+    export XDG_RUNTIME_DIR=/tmp/runtime-runner && \
     timeout 300 xvfb-run -a -s "-screen 0 1024x768x24 -ac +extension GLX +render -noreset" \
     bash -c "wineboot --init && sleep 5" || \
     (echo "Wine initialization failed, trying alternative method..." && \
@@ -203,35 +210,17 @@ RUN export DISPLAY=:99 && \
 # Wait for Wine to fully initialize
 RUN sleep 10
 
-# Set Windows compatibility to Windows 10 with better error handling
-RUN timeout 60 xvfb-run -a -s "-screen 0 1024x768x24" \
-    bash -c "winecfg /v win10 2>/dev/null || echo 'winecfg completed with warnings'"
-
 # Install core components first with better error handling
-RUN timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
+RUN export DISPLAY=:99 && \
+    export XDG_RUNTIME_DIR=/tmp/runtime-runner && \
+    timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
     bash -c "winetricks -q --force --unattended corefonts 2>/dev/null || echo 'corefonts installation completed with warnings'"
 
-# Install Visual C++ Redistributables with timeouts
-RUN timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
-    bash -c "winetricks -q --force --unattended vcrun2019 2>/dev/null || echo 'vcrun2019 installation completed with warnings'"
-
-RUN timeout 300 xvfb-run -a -s "-screen 0 1024x768x24" \
-    bash -c "winetricks -q --force --unattended vcrun2015 2>/dev/null || echo 'vcrun2015 installation completed with warnings'"
-
-# Install older redistributables
-RUN timeout 180 xvfb-run -a -s "-screen 0 1024x768x24" \
-    bash -c "winetricks -q --force --unattended vcrun2013 2>/dev/null || echo 'vcrun2013 installation completed with warnings'"
-
-RUN timeout 180 xvfb-run -a -s "-screen 0 1024x768x24" \
-    bash -c "winetricks -q --force --unattended vcrun2012 2>/dev/null || echo 'vcrun2012 installation completed with warnings'"
-
-# Install DirectX components
-RUN timeout 240 xvfb-run -a -s "-screen 0 1024x768x24" \
-    bash -c "winetricks -q --force --unattended d3dx9 2>/dev/null || echo 'd3dx9 installation completed with warnings'"
-
-# Copy and setup entrypoint script
+# Copy and setup scripts
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
-RUN chmod +x /home/runner/entrypoint.sh
+COPY --chown=runner:runner wine-setup.sh /home/runner/wine-setup.sh
+RUN chmod +x /home/runner/entrypoint.sh && \
+    chmod +x /home/runner/wine-setup.sh
 
 # Set entrypoint
 ENTRYPOINT ["./entrypoint.sh"]
