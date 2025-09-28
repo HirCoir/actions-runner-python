@@ -250,11 +250,9 @@ RUN export DISPLAY=:99 && \
     timeout 240 xvfb-run -a -s "-screen 0 1024x768x24" \
     bash -c "winetricks -q --force --unattended d3dx9 2>/dev/null || echo 'd3dx9 installation completed with warnings'"
 
-# Copy and setup scripts
+# Copy and setup entrypoint script
 COPY --chown=runner:runner entrypoint.sh /home/runner/entrypoint.sh
-COPY --chown=runner:runner wine-setup.sh /home/runner/wine-setup.sh
-RUN chmod +x /home/runner/entrypoint.sh && \
-    chmod +x /home/runner/wine-setup.sh
+RUN chmod +x /home/runner/entrypoint.sh
 
 # Set entrypoint
 ENTRYPOINT ["./entrypoint.sh"]
