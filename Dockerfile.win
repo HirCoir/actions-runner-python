@@ -111,14 +111,19 @@ RUN apt-get update && apt-get install -y \
     tree \
     zip \
     unzip \
-    # Node.js (often needed for GitHub Actions)
-    nodejs \
-    npm \
     # Docker CLI (for Docker-in-Docker scenarios)
     docker.io \
     # XVFB for virtual display
     xvfb \
     && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (latest LTS version) from NodeSource repository
+RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# Verify Node.js and npm installation
+RUN node --version && npm --version
 
 # Install GitHub CLI
 RUN apt-get update && apt-get install -y wget gpg \
